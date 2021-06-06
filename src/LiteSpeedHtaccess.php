@@ -37,7 +37,7 @@ class LiteSpeedHtaccess implements AutoloadInterface
 
     public function generateHtaccess()
     {
-        if (LiteSpeedCache::isLsCacheEnable()) {
+        if (LiteSpeedCache::isLsCacheEnable() && function_exists('insert_with_markers')) {
             try {
                 $root_dir = app_locate_root_dir();
 
