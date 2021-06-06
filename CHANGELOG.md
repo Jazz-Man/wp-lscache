@@ -1,7 +1,13 @@
 
+1.1.0 / 2021-06-06
+==================
+
+  * fix namespace
+
 1.0.0 / 2021-06-06
 ==================
 
+  * update CHANGELOG.md
   * update CHANGELOG.md
   * update WP LiteSpeed Cache config
   * added language
