@@ -9,19 +9,19 @@ class LiteSpeedFatalErrorHandler extends \WP_Fatal_Error_Handler
 {
     public function __construct()
     {
-        add_filter('nocache_headers', [$this, 'nocache_headers']);
+        add_filter('nocache_headers', [$this, 'nocacheHeaders']);
     }
 
     public function handle()
     {
         if (function_exists('nocache_headers')) {
-            self::send_nocache_headers();
+            self::sendNocacheHeaders();
         }
 
         parent::handle();
     }
 
-    private static function send_nocache_headers()
+    private static function sendNocacheHeaders()
     {
         $error_types = [
             E_ERROR,
@@ -51,7 +51,7 @@ class LiteSpeedFatalErrorHandler extends \WP_Fatal_Error_Handler
     /**
      * @return array
      */
-    public function nocache_headers(array $headers)
+    public function nocacheHeaders(array $headers)
     {
         $headers[LiteSpeedCache::X_CACHE_CONTROL] = LiteSpeedCache::NO_CACHE_PARAMS;
         $headers[LiteSpeedCache::CACHE_CONTROL] = LiteSpeedCache::NO_CACHE_PARAMS;
