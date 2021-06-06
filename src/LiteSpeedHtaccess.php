@@ -16,7 +16,7 @@ class LiteSpeedHtaccess implements AutoloadInterface
     /**
      * @var string[]
      */
-    private array $logged_in_cookie;
+    private array $loggedInCookie;
 
     private Block $block;
 
@@ -24,7 +24,7 @@ class LiteSpeedHtaccess implements AutoloadInterface
 
     public function load()
     {
-        $this->logged_in_cookie = [
+        $this->loggedInCookie = [
             LOGGED_IN_COOKIE,
             SECURE_AUTH_COOKIE,
             'wp-postpass_'.COOKIEHASH,
@@ -32,12 +32,12 @@ class LiteSpeedHtaccess implements AutoloadInterface
 
         $this->whiteLine = new WhiteLine();
 
-        add_action('generate_rewrite_rules', [$this, 'generate_htaccess']);
+        add_action('generate_rewrite_rules', [$this, 'generateHtaccess']);
     }
 
-    public function generate_htaccess()
+    public function generateHtaccess()
     {
-        if (LiteSpeedCache::is_ls_cache_enable()) {
+        if (LiteSpeedCache::isLsCacheEnable()) {
             try {
                 $root_dir = app_locate_root_dir();
 
@@ -51,6 +51,21 @@ class LiteSpeedHtaccess implements AutoloadInterface
                 );
 
                 insert_with_markers($htaccess, 'LiteSpeed', $content);
+            } catch (\Exception $e) {
+                app_error_log($e, self::class);
+            }
+        }
+    }
+
+    public static function removeHtaccessRules()
+    {
+        if (LiteSpeedCache::isLsCacheEnable()) {
+            try {
+                $root_dir = app_locate_root_dir();
+
+                $htaccess = "{$root_dir}/.htaccess";
+
+                insert_with_markers($htaccess, 'LiteSpeed', '#disables');
             } catch (\Exception $e) {
                 app_error_log($e, self::class);
             }
@@ -107,30 +122,30 @@ class LiteSpeedHtaccess implements AutoloadInterface
         $this->addDirective('RewriteCond', (array) $arguments);
     }
 
-    private function getNoCacheControl(?string $env = null): string
+    private function getNoCacheControl(?string $envName = null): string
     {
         return sprintf(
             '[E="cache-control:%s"%s]',
             LiteSpeedCache::NO_CACHE_PARAMS,
-            $env ? sprintf(',E="%s:true"', $env) : ''
+            $envName ? sprintf(',E="%s:true"', $envName) : ''
         );
     }
 
-    private function getPrivatCacheControl(?string $env = null): string
+    private function getPrivatCacheControl(?string $envName = null): string
     {
         return sprintf(
             '[E="cache-control:max-age=%d,private"%s]',
             LiteSpeedCache::PRIVATE_LIVE_TIME,
-            $env ? sprintf(',E="%s:true"', $env) : ''
+            $envName ? sprintf(',E="%s:true"', $envName) : ''
         );
     }
 
-    private function getPublicCacheControl(?string $env = null): string
+    private function getPublicCacheControl(?string $envName = null): string
     {
         return sprintf(
             '[E="cache-control:max-age=%d,public"%s]',
             LiteSpeedCache::PUBLIC_LIVE_TIME,
-            $env ? sprintf(',E="%s:true"', $env) : ''
+            $envName ? sprintf(',E="%s:true"', $envName) : ''
         );
     }
 
@@ -153,40 +168,33 @@ class LiteSpeedHtaccess implements AutoloadInterface
         $this->rewriteRule(['.? -', sprintf('[E="cache-vary:%s"]', LiteSpeedCache::X_VARY_COOKIE)]);
 
         $this->addComment('Enable Vary Value');
-        $this->rewriteRule(['.* -', sprintf('[E="cache-control:vary=%s"]', LiteSpeedCache::get_vary_value())]);
+        $this->rewriteRule(['.* -', sprintf('[E="cache-control:vary=%s"]', LiteSpeedCache::getVaryValue())]);
 
         $this->addComment('Start check logged in cookie');
 
-        foreach ($this->logged_in_cookie as $cookie) {
-            $this->rewriteCond(sprintf('%%{HTTP_COOKIE} (^|\s+)%s=(.*?)(;|$) [nc]', (string) $cookie));
+        foreach ($this->loggedInCookie as $cookie) {
+            $this->rewriteCond(sprintf('%%{HTTP_COOKIE} (^|\s+)%s=(.*?)(;|$) [nc]', $cookie));
 
             $this->rewriteRule(
                 [
                     '.* -',
-                    sprintf(
-                        '[E="cache-vary:%%{ENV:LSCACHE_VARY_COOKIE},%s",E="is_logged_in:true"]',
-                        (string) $cookie,
-                    ),
+                    sprintf('[E="cache-vary:%%{ENV:LSCACHE_VARY_COOKIE},%s",E="is_logged_in:true"]', $cookie),
                 ]
             );
         }
         $this->addComment('End check logged in cookie', false);
 
-        $vary_cookie = LiteSpeedCache::get_vary_cookie();
+        $varyCookies = LiteSpeedCache::getVaryCookies();
 
-        if ( ! empty($vary_cookie)) {
+        if ( ! empty($varyCookies)) {
             $this->addComment('Start check vary cookie');
 
-            foreach ($vary_cookie as $env => $cookie) {
+            foreach ($varyCookies as $envName => $cookie) {
                 $this->rewriteCond(['%{HTTP_COOKIE}', sprintf('(^|\s+)%s=(.*?)(;|$)', $cookie), '[nc]']);
                 $this->rewriteRule(
                     [
                         '.* -',
-                        sprintf(
-                            '[E="cache-vary:%%{ENV:LSCACHE_VARY_COOKIE},%s",E="%s:true"]',
-                            $cookie,
-                            $env,
-                        ),
+                        sprintf('[E="cache-vary:%%{ENV:LSCACHE_VARY_COOKIE},%s",E="%s:true"]', $cookie, $envName),
                     ]
                 );
             }
@@ -240,8 +248,8 @@ class LiteSpeedHtaccess implements AutoloadInterface
 
         $this->addComment('Start Drop QUERY_STRING');
 
-        foreach (['fbclid', 'gclid', 'utm*', '_ga'] as $query_string) {
-            $this->addDirective('CacheKeyModify', sprintf('-qs:%s', $query_string));
+        foreach (['fbclid', 'gclid', 'utm*', '_ga'] as $queryString) {
+            $this->addDirective('CacheKeyModify', sprintf('-qs:%s', $queryString));
         }
         $this->addComment('End Drop QUERY_STRING');
 
