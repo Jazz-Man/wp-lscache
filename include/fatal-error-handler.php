@@ -8,6 +8,6 @@ Version: v1.0.0
 Author: Vasyl Sokolyk
 */
 
-use JazzMan\LiteSpeed\LiteSpeedFatalErrorHandler;
+use JazzMan\LsCache\LiteSpeedFatalErrorHandler;
 
 return new LiteSpeedFatalErrorHandler();

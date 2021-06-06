@@ -8,7 +8,7 @@ Version: v1.0.0
 Author: Vasyl Sokolyk
 */
 
-use JazzMan\LiteSpeed\LiteSpeedCache;
+use JazzMan\LsCache\LiteSpeedCache;
 
 function wp_cache_postload()
 {
