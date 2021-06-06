@@ -1,0 +1,36 @@
+{
+    "name": "jazzman/wp-lscache",
+    "authors": [
+        {
+            "name": "Vasyl Sokolyk",
+            "email": "vsokolyk@gmail.com"
+        }
+    ],
+    "config": {
+        "sort-packages": true,
+        "classmap-authoritative": true,
+        "preferred-install": "dist",
+        "optimize-autoloader": true,
+        "apcu-autoloader": true
+    },
+    "require": {
+        "php": ">=7.1"
+    },
+    "require-dev": {
+        "roave/security-advisories": "dev-master",
+        "roots/wordpress": "^5.7"
+    },
+    "extra": {
+        "installer-paths": {
+            "vendor/wp/wp-content/mu-plugins/{$name}/": ["type:wordpress-muplugin"],
+            "vendor/wp/wp-content/plugins/{$name}/": ["type:wordpress-plugin"],
+            "vendor/wp/wp-content/themes/{$name}/": ["type:wordpress-theme"]
+        },
+        "wordpress-install-dir": "vendor/wp"
+    },
+    "autoload": {
+        "psr-4": {
+            "JazzMan\\LsCache\\": "src"
+        }
+    }
+}
