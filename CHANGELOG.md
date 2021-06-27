@@ -1,7 +1,13 @@
 
+1.2.0 / 2021-06-28
+==================
+
+  * update LS Cache ENV config
+
 1.1.1 / 2021-06-06
 ==================
 
+  * update CHANGELOG.md
   * check if insert_with_markers exist
 
 1.1.0 / 2021-06-06
