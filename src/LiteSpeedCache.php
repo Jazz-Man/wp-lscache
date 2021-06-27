@@ -18,9 +18,18 @@ class LiteSpeedCache
     public const CACHE_CONTROL = 'Cache-Control';
     public const NO_CACHE_PARAMS = 'no-cache,must-revalidate,max-age=0';
     public const PUBLIC_LIVE_TIME = MONTH_IN_SECONDS;
-    public const PRIVATE_LIVE_TIME = MINUTE_IN_SECONDS;
+    public const PRIVATE_LIVE_TIME = 0;
+    public const ENV_REST_API = 'is_rest_api';
+    public const ENV_QUERY_STRING = 'is_query_string';
+    public const ENV_ADMIN = 'is_admin';
+    public const ENV_EDITABLE_REQUEST = 'is_editable_request';
+    public const ENV_READABLE_REQUEST = 'is_readable_request';
+    public const ENV_WEBP = 'is_webp';
+    public const ENV_AJAX = 'is_ajax';
+    public const ENV_PUBLIC_CACHE = 'is_public_cache';
+    public const ENV_NO_CACHE_PAGES = 'is_no_cache_pages';
 
-    private static string $flushStringRegex = '/(?<prefix>post|term|archive|all)(?<separator>-)?(?<value>\d+|[a-z\-\_]+)?$/';
+    private static string $flushStringRegex = '/(?<prefix>post|term|archive|all|private)(?<separator>-)?(?<value>\d+|[a-z\-\_]+)?$/';
 
     public function __construct()
     {
@@ -37,7 +46,7 @@ class LiteSpeedCache
         add_action('set_object_terms', [__CLASS__, 'lsCacheFlushPost']);
         add_action('save_post', [__CLASS__, 'lsCacheFlushPost']);
         add_action('delete_post', [__CLASS__, 'lsCacheFlushPost']);
-        add_filter('rest_post_dispatch', [$this, 'sendNocacheHeadersOnResrApi']);
+        add_filter('rest_post_dispatch', [$this, 'sendNocacheHeadersOnRestApi']);
     }
 
     public static function lsCacheFlushTerm(int $termId): void
@@ -73,10 +82,35 @@ class LiteSpeedCache
      */
     public static function getVaryCookies(): array
     {
-        return (array) apply_filters('ls_cache_vary_cookie', []);
+        $varyCookies = [
+            'is_user_cookie' => USER_COOKIE,
+            'is_pass_cookie' => PASS_COOKIE,
+            'is_auth_cookie' => AUTH_COOKIE,
+            'is_secure_auth_cookie' => SECURE_AUTH_COOKIE,
+            'is_logged_in_cookie' => LOGGED_IN_COOKIE,
+            'is_recovery_mode_cookie' => RECOVERY_MODE_COOKIE,
+            'is_wp_postpass_cookie' => 'wp-postpass_'.COOKIEHASH,
+        ];
+
+        return (array) apply_filters('ls_cache_vary_cookie', $varyCookies);
     }
 
-    public function sendNocacheHeadersOnResrApi(WP_HTTP_Response $result): WP_HTTP_Response
+    /**
+     * @example:
+     * ENV variable: "is_cart_page"
+     * Value: "https://site.com/cart/":
+     * @code :
+     * $pages["is_cart_page"] = "https://site.com/cart/";
+     *
+     * @return array<string, string>
+     */
+
+    public static function getNoCachePages(): array
+    {
+        return (array) apply_filters('ls_no_cache_pages', []);
+    }
+
+    public function sendNocacheHeadersOnRestApi(WP_HTTP_Response $result): WP_HTTP_Response
     {
         $nocache_headers = wp_get_nocache_headers();
 
@@ -87,7 +121,7 @@ class LiteSpeedCache
         return $result;
     }
 
-    public function lsCacheFlush(\WP $wp)
+    public function lsCacheFlush(\WP $wp): void
     {
         $data = app_get_request_data();
 
@@ -97,17 +131,21 @@ class LiteSpeedCache
             preg_match(self::$flushStringRegex, $flushString, $result);
 
             if ( ! headers_sent() && ( ! empty($result) && ! empty($result['prefix']))) {
-                $tag = (array) $result['prefix'];
+                if ('private' === $result['prefix']) {
+                    self::purgePrivateCache();
+                } else {
+                    $tag = (array) $result['prefix'];
 
-                if ($result['separator']) {
-                    $tag[] = $result['separator'];
+                    if ( ! empty($result['separator'])) {
+                        $tag[] = $result['separator'];
+                    }
+
+                    if ( ! empty($result['value'])) {
+                        $tag[] = $result['value'];
+                    }
+
+                    self::purgeTags(implode('', $tag));
                 }
-
-                if ($result['value']) {
-                    $tag[] = $result['value'];
-                }
-
-                self::purgeTags(implode('', $tag));
             }
         }
     }
@@ -134,6 +172,13 @@ class LiteSpeedCache
                 implode(', ', $tags_list)
             )
         );
+
+        self::purgePrivateCache();
+    }
+
+    private static function purgePrivateCache()
+    {
+        header(sprintf('%s: private, *', self::X_PURGE_HEADER));
     }
 
     public function setCookie()
@@ -142,11 +187,15 @@ class LiteSpeedCache
 
         CookieSetter::setcookie(
             self::X_VARY_COOKIE,
-            $cookie,
-            [
-                'samesite' => 'Strict',
-            ]
+            $cookie
+//            [
+//                'samesite' => 'Strict',
+//            ]
         );
+
+//        self::flushRequest("private");
+
+//        self::purgePrivateCache();
     }
 
     public static function getVaryValue(): ?string
@@ -166,7 +215,7 @@ class LiteSpeedCache
     {
         $sendNocache =
             ! self::isLsCacheEnable()
-            || ( ! app_is_rest() && ! empty(filter_input(INPUT_SERVER, 'QUERY_STRING')));
+            || ( ! app_is_rest() && self::isQueryString());
 
         $sendNocache = (bool) apply_filters('ls_cache_send_nocache', $sendNocache);
 
@@ -201,6 +250,11 @@ class LiteSpeedCache
         return (bool) apply_filters('ls_cache_enable', true);
     }
 
+    private static function isQueryString(): bool
+    {
+        return (bool) filter_input(INPUT_SERVER, 'QUERY_STRING');
+    }
+
     /**
      * @param string[] $tags
      */
@@ -217,17 +271,8 @@ class LiteSpeedCache
 
     public function nocacheHeaders(array $headers): array
     {
-        if (self::isLsCacheEnable()) {
-            $value = wp_doing_ajax() ? self::NO_CACHE_PARAMS : sprintf(
-                'private,max-age=%d',
-                self::PRIVATE_LIVE_TIME
-            );
-        } else {
-            $value = self::NO_CACHE_PARAMS;
-        }
-
-        $headers[self::X_CACHE_CONTROL] = $value;
-        $headers[self::CACHE_CONTROL] = $value;
+        $headers[self::X_CACHE_CONTROL] = self::NO_CACHE_PARAMS;
+        $headers[self::CACHE_CONTROL] = self::NO_CACHE_PARAMS;
 
         return $headers;
     }
@@ -239,24 +284,11 @@ class LiteSpeedCache
      */
     public function wpHeaders(array $headers): array
     {
-        $lastModified = mysql2date('D, d M Y H:i:s', get_lastpostmodified('GMT'), false);
-
-        if ( ! $lastModified) {
-            $lastModified = \gmdate('D, d M Y H:i:s');
-        }
-
-        $lastModified .= ' GMT';
-
-        $etag = sprintf('"%s"', md5($lastModified));
-
-        $headers['Last-Modified'] = $lastModified;
-        $headers['ETag'] = $etag;
-
         $varyData = [
             sprintf('value=%s', self::getVaryValue()),
         ];
 
-        $varyCookie = (array) apply_filters('ls_cache_vary_cookie', []);
+        $varyCookie = self::getVaryCookies();
 
         if ( ! empty($varyCookie)) {
             foreach ($varyCookie as $env => $cookie) {
@@ -266,49 +298,15 @@ class LiteSpeedCache
 
         $headers[self::X_VARY_HEADER] = implode(',', $varyData);
 
-        if ( ! is_user_logged_in()) {
-            $headers[self::CACHE_CONTROL] = sprintf(
-                'max-age=%d,public',
-                self::PUBLIC_LIVE_TIME
-            );
+        if (filter_input(INPUT_SERVER,self::ENV_PUBLIC_CACHE,FILTER_VALIDATE_BOOLEAN)) {
+            $cache_control = sprintf('max-age=%d,public', self::PUBLIC_LIVE_TIME);
+        }else{
+            $cache_control = self::NO_CACHE_PARAMS;
         }
 
-        $this->lastModifiedHendler($lastModified, $etag);
+        $headers[self::X_CACHE_CONTROL] = $cache_control;
+        $headers[self::CACHE_CONTROL] = $cache_control;
 
         return $headers;
-    }
-
-    private function lastModifiedHendler(string $lastModified, string $etag)
-    {
-        $httpIfNoneMatch = filter_input(INPUT_SERVER, 'HTTP_IF_NONE_MATCH');
-        $httpIfModifiedSince = filter_input(INPUT_SERVER, 'HTTP_IF_MODIFIED_SINCE');
-        // Support for conditional GET.
-        $clientEtag = isset($httpIfNoneMatch) ? wp_unslash($httpIfNoneMatch) : false;
-
-        $clientLastModified = $httpIfModifiedSince ? app_trim_string($httpIfModifiedSince) : '';
-        // If string is empty, return 0. If not, attempt to parse into a timestamp.
-        $clientModifiedTimestamp = $clientLastModified ? \strtotime($clientLastModified) : 0;
-
-        // Make a timestamp for our most recent modification..
-        $modifiedTimestamp = \strtotime($lastModified);
-
-        if (($clientLastModified && $clientEtag) ?
-            (($clientModifiedTimestamp >= $modifiedTimestamp) && ($clientEtag === $etag)) :
-            (($clientModifiedTimestamp >= $modifiedTimestamp) || ($clientEtag === $etag))) {
-            $code = 304;
-
-            \header(
-                sprintf(
-                    '%s %d %s',
-                    wp_get_server_protocol(),
-                    $code,
-                    get_status_header_desc($code)
-                ),
-                true,
-                $code
-            );
-
-            exit;
-        }
     }
 }
